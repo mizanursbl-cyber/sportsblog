@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Calendar, Clock, Search, X, TrendingUp } from "lucide-react";
 
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -73,14 +73,77 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debounced;
 }
 
+/**
+ * Generic auto-scroll wrapper:
+ * - Shows 6–7 “small” cards *if the wrapped content is a horizontal row*.
+ * - Slides every intervalMs and loops back to start.
+ * - Pauses on hover.
+ */
+function AutoScrollX({
+  children,
+  intervalMs = 2000,
+  stepPx = 340,
+  disabled = false,
+}: {
+  children: React.ReactNode;
+  intervalMs?: number;
+  stepPx?: number;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || disabled) return;
+
+    const tick = () => {
+      if (!ref.current) return;
+      const x = ref.current.scrollLeft;
+      const max = ref.current.scrollWidth - ref.current.clientWidth;
+
+      // If near end, loop back
+      if (x >= max - 8) {
+        ref.current.scrollTo({ left: 0, behavior: "smooth" });
+      } else {
+        ref.current.scrollBy({ left: stepPx, behavior: "smooth" });
+      }
+    };
+
+    if (hovered) return;
+
+    const t = window.setInterval(tick, intervalMs);
+    return () => window.clearInterval(t);
+  }, [intervalMs, stepPx, hovered, disabled]);
+
+  return (
+    <div
+      ref={ref}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="overflow-x-auto scroll-smooth no-scrollbar"
+    >
+      {children}
+    </div>
+  );
+}
+
 const HomePage = () => {
   const { language } = useLanguage();
   const reduceMotion = useReducedMotion();
-  const navigate = useNavigate();
+
+  const SITE = useMemo(() => {
+    return {
+      name: language === "bn" ? "বিডি স্পোর্টস অ্যারেনা" : "BDSportsArena",
+      slogan: "From Field to Fan – Sports Uncovered.",
+      // ✅ served from /public/websitelogo/...
+      logoSrc: "/websitelogo/android-chrome-192x192.png",
+    };
+  }, [language]);
 
   const [category, setCategory] = useState<HomeCategory>("all");
 
-  // --- Live date/time under Breaking ---
+  // --- Live date/time in header ---
   const [clock, setClock] = useState(() => formatLocalDateTime(language));
   useEffect(() => {
     setClock(formatLocalDateTime(language));
@@ -96,10 +159,11 @@ const HomePage = () => {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchArticle[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
 
   const pageTitle = useMemo(() => {
-    return language === "bn" ? "স্পোর্টসব্লগ বিডি — সর্বশেষ খেলা" : "SportsBlogBD — Latest Sports";
-  }, [language]);
+    return language === "bn" ? `${SITE.name} — সর্বশেষ খেলা` : `${SITE.name} — Latest Sports`;
+  }, [language, SITE.name]);
 
   const subTitle = useMemo(() => {
     return language === "bn"
@@ -112,6 +176,21 @@ const HomePage = () => {
       ? ["বাংলাদেশ", "IPL", "BPL", "ফুটবল", "চ্যাম্পিয়ন্স লিগ", "টেনিস", "হাইলাইটস"]
       : ["Bangladesh", "IPL", "BPL", "Football", "Champions League", "Tennis", "Highlights"];
   }, [language]);
+
+  // Set browser tab title
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!searchBoxRef.current?.contains(target)) setSearchOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
 
   // Fetch search results from Supabase
   useEffect(() => {
@@ -127,7 +206,6 @@ const HomePage = () => {
       setSearchError(null);
 
       try {
-        // NOTE: Requires @supabase/supabase-js installed and articles table exists
         const q = debouncedQuery.replace(/%/g, "\\%").replace(/_/g, "\\_");
 
         const { data, error } = await supabase
@@ -166,13 +244,10 @@ const HomePage = () => {
   const onSubmitSearch = () => {
     const q = query.trim();
     if (!q) return;
-    // If you already have a SearchPage route, use it:
-    // navigate(`/search?q=${encodeURIComponent(q)}`);
-    // If not, keep it on home and just open dropdown:
     setSearchOpen(true);
   };
 
-  const showSearchResultsPanel = (query.trim().length > 0);
+  const showSearchResultsPanel = query.trim().length > 0;
 
   return (
     <AnimatePresence mode="wait">
@@ -192,31 +267,32 @@ const HomePage = () => {
         </a>
 
         <ScrollProgressBar />
-        <HeroSection />
 
-        <div className="container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-          {/* Title + Search */}
-          <div className="mb-6 sm:mb-10">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-              <div className="min-w-0">
-                <motion.h1
-                  className="text-3xl sm:text-4xl md:text-5xl font-serif font-black tracking-tight text-foreground dark:text-white"
-                  initial={reduceMotion ? false : { y: 10, opacity: 0 }}
-                  whileInView={reduceMotion ? undefined : { y: 0, opacity: 1 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.35 }}
-                >
-                  {pageTitle}
-                </motion.h1>
-                <p className="mt-2 text-base sm:text-lg text-muted-foreground">{subTitle}</p>
-
-                {/* Breaking ticker */}
-                <div className="mt-4">
+        {/* ✅ Sticky top area: Breaking (top) + Live Matches (below) + Branding */}
+        <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur">
+          {/* Breaking headline at top */}
+          <div className="border-b bg-muted/30">
+            <div className="container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-red-600 text-white text-[11px] font-bold px-2 py-1">
+                  {language === "bn" ? "ব্রেকিং" : "BREAKING"}
+                </span>
+                <div className="min-w-0 flex-1">
                   <BreakingTicker />
                 </div>
+              </div>
+            </div>
+          </div>
 
-                {/* Date/Time under breaking */}
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {/* Live matches carousel directly under breaking */}
+          <div className="border-b">
+            <div className="container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-2">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <TrendingUp size={16} className="text-muted-foreground" />
+                  {language === "bn" ? "লাইভ ম্যাচ" : "Live Matches"}
+                </div>
+                <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <Calendar size={14} />
                     {clock.date}
@@ -225,19 +301,47 @@ const HomePage = () => {
                     <Clock size={14} />
                     {clock.time}
                   </span>
-
-                  <span className="mx-1 text-muted-foreground/60">•</span>
-
-                  <span className="inline-flex items-center gap-1">
-                    <TrendingUp size={14} />
-                    {language === "bn" ? "লাইভ আপডেট" : "Live updates"}
-                  </span>
                 </div>
               </div>
 
-              {/* Search box */}
-              <div className="w-full lg:w-[480px]">
-                <Card className="p-3 sm:p-4">
+              <div className="rounded-xl border bg-card p-2">
+                <AutoScrollX intervalMs={2000} stepPx={360} disabled={!!reduceMotion}>
+                  {/* NOTE: If LiveMatchCarousel renders a horizontal row, this will auto-slide it. */}
+                  <Suspense fallback={<div className="h-[92px] rounded-lg bg-muted animate-pulse" />}>
+                    <div className="min-w-max">
+                      <LiveMatchCarousel />
+                    </div>
+                  </Suspense>
+                </AutoScrollX>
+              </div>
+
+              <div className="mt-2 text-[11px] text-muted-foreground">
+                {language === "bn" ? "হোভার করলে স্লাইড থামবে" : "Hover to pause sliding"}
+              </div>
+            </div>
+          </div>
+
+          {/* Brand + Search row */}
+          <div className="container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <Link to="/" className="flex items-center gap-3 min-w-0">
+                <img
+                  src={SITE.logoSrc}
+                  alt={`${SITE.name} logo`}
+                  className="h-10 w-10 rounded-xl border bg-white object-contain"
+                  loading="eager"
+                />
+                <div className="min-w-0">
+                  <div className="text-lg sm:text-xl font-black tracking-tight text-foreground dark:text-white truncate">
+                    {SITE.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">{SITE.slogan}</div>
+                </div>
+              </Link>
+
+              {/* Search */}
+              <div ref={searchBoxRef} className="w-full lg:w-[520px]">
+                <Card className="p-3 sm:p-3">
                   <div className="flex items-center gap-2">
                     <Search className="text-muted-foreground" size={18} />
                     <input
@@ -277,7 +381,6 @@ const HomePage = () => {
                         exit={{ opacity: 0, y: 6 }}
                         className="mt-3 border-t pt-3"
                       >
-                        {/* Trending tags quick actions */}
                         {!showSearchResultsPanel ? (
                           <>
                             <div className="text-xs font-semibold text-muted-foreground mb-2">
@@ -300,7 +403,6 @@ const HomePage = () => {
                           </>
                         ) : null}
 
-                        {/* Results */}
                         {showSearchResultsPanel ? (
                           <div className="mt-1">
                             {searchLoading ? (
@@ -363,14 +465,32 @@ const HomePage = () => {
                   </AnimatePresence>
                 </Card>
 
-                {/* tiny helper */}
                 <div className="mt-2 text-xs text-muted-foreground">
-                  {language === "bn"
-                    ? "Enter চাপুন সার্চ করতে • Esc চাপুন বন্ধ করতে"
-                    : "Press Enter to search • Esc to close"}
+                  {language === "bn" ? "Enter চাপুন সার্চ করতে • Esc চাপুন বন্ধ করতে" : "Press Enter to search • Esc to close"}
                 </div>
               </div>
             </div>
+          </div>
+        </header>
+
+        {/* Optional hero section below header */}
+        <HeroSection />
+
+        <div className="container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+          {/* Big page heading (brand consistent) */}
+          <div className="mb-8 sm:mb-10">
+            <motion.h1
+              className="text-3xl sm:text-4xl md:text-5xl font-serif font-black tracking-tight text-foreground dark:text-white"
+              initial={reduceMotion ? false : { y: 10, opacity: 0 }}
+              whileInView={reduceMotion ? undefined : { y: 0, opacity: 1 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.35 }}
+            >
+              {pageTitle}
+            </motion.h1>
+
+            <p className="mt-2 text-base sm:text-lg text-muted-foreground">{subTitle}</p>
+            <p className="mt-2 text-sm font-medium text-foreground/80 dark:text-white/80">{SITE.slogan}</p>
           </div>
 
           {/* Filters */}
@@ -378,30 +498,16 @@ const HomePage = () => {
             <QuickFilters value={category} onChange={setCategory} />
           </div>
 
-          {/* Match Center */}
+          {/* Upcoming matches (optional, kept) */}
           <Section
-            title={language === "bn" ? "ম্যাচ সেন্টার" : "Match Center"}
-            subtitle={language === "bn" ? "লাইভ এবং আসন্ন ম্যাচ এক জায়গায়" : "Live and upcoming matches in one place"}
-            actionLabel={language === "bn" ? "সব দেখুন" : "View all"}
-            onAction={() => {
-              // optional: if you have route
-              // navigate("/matches");
-              window.location.hash = "#main";
-            }}
+            title={language === "bn" ? "আসন্ন ম্যাচ" : "Upcoming Matches"}
+            subtitle={language === "bn" ? "আগামী ফিক্সচার এক নজরে" : "Next fixtures at a glance"}
           >
-            <div className="space-y-8">
-              <LazyMount minHeight={180}>
-                <Suspense fallback={<div className="h-[180px] rounded-xl border bg-card animate-pulse" />}>
-                  <LiveMatchCarousel />
-                </Suspense>
-              </LazyMount>
-
-              <LazyMount minHeight={180}>
-                <Suspense fallback={<div className="h-[180px] rounded-xl border bg-card animate-pulse" />}>
-                  <UpcomingMatchCarousel />
-                </Suspense>
-              </LazyMount>
-            </div>
+            <LazyMount minHeight={180}>
+              <Suspense fallback={<div className="h-[180px] rounded-xl border bg-card animate-pulse" />}>
+                <UpcomingMatchCarousel />
+              </Suspense>
+            </LazyMount>
           </Section>
 
           {/* Content grid */}
@@ -411,14 +517,11 @@ const HomePage = () => {
                 title={language === "bn" ? "সর্বশেষ নিউজ" : "Latest News"}
                 subtitle={language === "bn" ? "নির্ভরযোগ্য আপডেট এবং বিশ্লেষণ" : "Reliable updates and analysis"}
               >
-                {/* If searching, show results list; else show MainContent */}
                 {query.trim() ? (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm text-muted-foreground">
-                        {language === "bn"
-                          ? `সার্চ ফলাফল: “${query.trim()}”`
-                          : `Search results for “${query.trim()}”`}
+                        {language === "bn" ? `সার্চ ফলাফল: “${query.trim()}”` : `Search results for “${query.trim()}”`}
                       </div>
                       <Button variant="outline" onClick={clearSearch}>
                         {language === "bn" ? "ক্লিয়ার" : "Clear"}
@@ -437,9 +540,7 @@ const HomePage = () => {
                         {searchError}
                       </div>
                     ) : results.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">
-                        {language === "bn" ? "কোনো ফলাফল নেই।" : "No results."}
-                      </div>
+                      <div className="text-sm text-muted-foreground">{language === "bn" ? "কোনো ফলাফল নেই।" : "No results."}</div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {results.map((a) => (
@@ -455,9 +556,7 @@ const HomePage = () => {
                             )}
 
                             <div className="p-4">
-                              <div className="text-sm font-semibold text-foreground dark:text-white line-clamp-2">
-                                {a.title}
-                              </div>
+                              <div className="text-sm font-semibold text-foreground dark:text-white line-clamp-2">{a.title}</div>
                               {a.description ? (
                                 <div className="mt-1 text-xs text-muted-foreground line-clamp-2">{a.description}</div>
                               ) : null}
