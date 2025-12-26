@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@animaapp/playground-react-sdk": "0.10.0",
+    "@supabase/supabase-js": "^2.49.1",
     "@radix-ui/react-accordion": "1.2.1",
     "@radix-ui/react-alert-dialog": "1.1.2",
     "@radix-ui/react-aspect-ratio": "1.1.0",
@@ -51,7 +52,6 @@
     "react-router-dom": "^6.8.1",
     "recharts": "^2.10.3",
     "serve": "^14.2.1",
-    "@supabase/supabase-js": "^2.49.1"
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {
