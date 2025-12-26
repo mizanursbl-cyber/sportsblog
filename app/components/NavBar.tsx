@@ -29,7 +29,7 @@ const NavBar = () => {
 
   return (
     <motion.nav
-      className="sticky top-[52px] z-40 bg-neutral dark:bg-gray-800 border-b border-border dark:border-gray-700"
+      className="relative z-40 bg-neutral dark:bg-gray-800 border-b border-border dark:border-gray-700"
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.5, delay: 0.2 }}
